@@ -30,24 +30,14 @@ RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --opti
 # Stage 2: Production image
 FROM php:8.5-fpm-alpine AS production
 
-# Install runtime dependencies, compile PHP extensions, then remove build deps
-RUN apk add --no-cache \
-    nginx \
-    supervisor \
-    libpq \
-    icu-libs \
-    libzip \
-    && apk add --no-cache --virtual .build-deps autoconf g++ make libpq-dev icu-dev libzip-dev \
-    && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
-    && docker-php-ext-install \
-    pdo_pgsql \
-    pgsql \
-    intl \
-    bcmath \
-    zip \
-    opcache \
-    && apk del .build-deps \
-    && rm -rf /var/cache/apk/*
+# Install runtime dependencies
+RUN apk add --no-cache nginx supervisor libpq icu-libs libzip
+
+# Install build deps, compile PHP extensions, then clean up
+RUN apk add --no-cache --virtual .build-deps autoconf g++ make libpq-dev icu-dev libzip-dev
+RUN docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql
+RUN docker-php-ext-install pdo_pgsql pgsql intl bcmath zip opcache
+RUN apk del .build-deps && rm -rf /var/cache/apk/*
 
 # Configure PHP-FPM
 RUN sed -i 's/^listen = .*/listen = 127.0.0.1:9000/' /usr/local/etc/php-fpm.d/www.conf
