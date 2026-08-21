@@ -1,10 +1,17 @@
-# Stage 1: Install PHP dependencies
+# Stage 1: Build & Vendor Dependencies
 FROM php:8.5-fpm-alpine AS composer
 
+# Install build-only dependencies (including tools needed to build PHP extensions)
 RUN apk add --no-cache \
     libpq-dev \
     icu-dev \
     libzip-dev \
+    autoconf \
+    g++ \
+    make
+
+# Configure and compile PHP extensions for Composer scripts/tests if needed
+RUN docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
     && docker-php-ext-install \
     pdo_pgsql \
     pgsql \
@@ -20,18 +27,19 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --optimize-autoloader
 
-COPY . .
-RUN composer dump-autoload --optimize
-
 # Stage 2: Production image
 FROM php:8.5-fpm-alpine AS production
 
+# Install runtime dependencies ONLY (libpq, icu-libs, libzip)
 RUN apk add --no-cache \
     nginx \
     supervisor \
-    libpq-dev \
-    icu-dev \
-    libzip-dev \
+    libpq \
+    icu-libs \
+    libzip \
+    # Install dev packages temporarily to compile the final image extensions
+    && apk add --no-cache --virtual .build-deps libpq-dev icu-dev libzip-dev \
+    && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
     && docker-php-ext-install \
     pdo_pgsql \
     pgsql \
@@ -39,6 +47,8 @@ RUN apk add --no-cache \
     bcmath \
     zip \
     opcache \
+    # Purge dev compilation packages to shrink image size
+    && apk del .build-deps \
     && rm -rf /var/cache/apk/*
 
 # Configure PHP-FPM
@@ -74,7 +84,6 @@ server {
     location ~ /\.(?!well-known) {
         deny all;
     }
-
 }
 NGINX
 
@@ -114,14 +123,18 @@ RUN echo "opcache.enable=1" >> /usr/local/etc/php/conf.d/opcache.ini \
 
 WORKDIR /app
 
-# Copy application code
+# Copy application code first, then vendor folder to prevent overwriting vendor layout
 COPY . .
-
-# Copy vendor from composer stage
 COPY --from=composer /app/vendor ./vendor
 
-# Set permissions
-RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache \
+# Set up essential Laravel storage directories and permissions
+RUN mkdir -p /app/storage/framework/cache/data \
+    && mkdir -p /app/storage/framework/app/cache \
+    && mkdir -p /app/storage/framework/sessions \
+    && mkdir -p /app/storage/framework/views \
+    && mkdir -p /app/storage/logs \
+    && mkdir -p /app/bootstrap/cache \
+    && chown -R www-data:www-data /app \
     && chmod -R 775 /app/storage /app/bootstrap/cache
 
 ENV LOG_CHANNEL=stderr
@@ -136,6 +149,7 @@ set -e
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
+
 exec /usr/bin/supervisord -c /etc/supervisord.conf
 ENTRYPOINT
 RUN chmod +x /entrypoint.sh
