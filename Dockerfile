@@ -23,18 +23,7 @@ RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --opti
 COPY . .
 RUN composer dump-autoload --optimize
 
-# Stage 2: Build frontend assets
-FROM node:22-alpine AS node
-
-WORKDIR /app
-
-COPY package.json package-lock.json* ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-# Stage 3: Production image
+# Stage 2: Production image
 FROM php:8.5-fpm-alpine AS production
 
 RUN apk add --no-cache \
@@ -86,11 +75,6 @@ server {
         deny all;
     }
 
-    location /build/ {
-        expires 1y;
-        access_log off;
-        add_header Cache-Control "public, immutable";
-    }
 }
 NGINX
 
@@ -136,9 +120,6 @@ COPY . .
 # Copy vendor from composer stage
 COPY --from=composer /app/vendor ./vendor
 
-# Copy built frontend assets from node stage
-COPY --from=node /app/public/build ./public/build
-
 # Set permissions
 RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache \
     && chmod -R 775 /app/storage /app/bootstrap/cache
@@ -155,8 +136,6 @@ set -e
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
-php artisan view:cache
-
 exec /usr/bin/supervisord -c /etc/supervisord.conf
 ENTRYPOINT
 RUN chmod +x /entrypoint.sh
