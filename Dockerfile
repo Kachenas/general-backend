@@ -38,7 +38,7 @@ RUN apk add --no-cache \
     icu-libs \
     libzip \
     # Install dev packages temporarily to compile the final image extensions
-    && apk add --no-cache --virtual .build-deps libpq-dev icu-dev libzip-dev \
+    && apk add --no-cache --virtual .build-deps autoconf g++ make libpq-dev icu-dev libzip-dev \
     && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
     && docker-php-ext-install \
     pdo_pgsql \
