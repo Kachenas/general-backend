@@ -1,0 +1,17 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run production deployment test
+        run: echo "Production deployment triggered successfully on branch ${{ github.ref_name }}"
