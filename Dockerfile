@@ -30,14 +30,13 @@ RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --opti
 # Stage 2: Production image
 FROM php:8.5-fpm-alpine AS production
 
-# Install runtime dependencies ONLY (libpq, icu-libs, libzip)
+# Install runtime dependencies, compile PHP extensions, then remove build deps
 RUN apk add --no-cache \
     nginx \
     supervisor \
     libpq \
     icu-libs \
     libzip \
-    # Install dev packages temporarily to compile the final image extensions
     && apk add --no-cache --virtual .build-deps autoconf g++ make libpq-dev icu-dev libzip-dev \
     && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
     && docker-php-ext-install \
@@ -47,7 +46,6 @@ RUN apk add --no-cache \
     bcmath \
     zip \
     opcache \
-    # Purge dev compilation packages to shrink image size
     && apk del .build-deps \
     && rm -rf /var/cache/apk/*
 
