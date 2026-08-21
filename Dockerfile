@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 0: Base — PHP extensions compiled once, shared by every later stage
 # =============================================================================
-FROM php:8.5-fpm-alpine AS base
+FROM php:8.4-fpm-alpine AS base
 
 # Runtime libs are kept; build deps are added and removed in the SAME layer so
 # they never get baked into the image. $PHPIZE_DEPS is provided by the official
