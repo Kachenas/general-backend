@@ -1,26 +1,49 @@
+# VCS
 .git
+.gitignore
+.gitattributes
 .github
+
+# Secrets — never ship these into an image layer
 .env
 .env.*
 !.env.example
 
-node_modules
+# Dependencies (rebuilt inside the image)
 vendor
-
-storage/logs/*
-storage/framework/cache/*
-storage/framework/sessions/*
-storage/framework/views/*
-
-tests
+node_modules
 
 docker-compose*.yml
 Dockerfile
 
-.idea
-.vscode
-.phpunit.result.cache
-.php-cs-fixer.cache
+# Build output
+public/build
+public/hot
+public/storage
+
+# Local state
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/public/*
+bootstrap/cache/*.php
 
 *.md
 !README.md
+
+# Dev tooling
+tests
+phpunit.xml
+phpstan.neon
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpunit.cache
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+README.md
+.editorconfig
+.idea
+.vscode
+.DS_Store
