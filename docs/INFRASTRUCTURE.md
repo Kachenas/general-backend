@@ -366,6 +366,12 @@ aws ecs update-service \
 
 > **Important:** The ECS task definition references these secrets individually via `secretsmanager:{secret_arn}:KEY::`. Terraform sets up these references automatically - you only need to populate the values.
 
+### Common Mistakes
+
+- **`DB_USERNAME` must be `adventus_admin`** — not `adventus_admin_staging` or any other variation. This is the master username Terraform used when creating the RDS instance (defined in the RDS module).
+- **`DB_DATABASE` must be `adventus`** — not `postgres` or the project name. This is the database name Terraform created on the RDS instance.
+- **`DB_PASSWORD` must match `TF_VAR_DB_PASSWORD` exactly** — this is the master password Terraform set on the RDS instance. If they don't match, you'll get `password authentication failed`.
+
 ---
 
 ## Environment Differences
@@ -395,6 +401,13 @@ aws ecs update-service \
 2. **Secrets Manager:** Ensure all secret values are populated (not placeholders). Missing `APP_KEY` or `DB_HOST` will cause the container to fail
 3. **Database connectivity:** The ECS tasks run in private subnets and connect to RDS via the security group. Verify the RDS security group allows inbound on port 5432 from the ECS security group
 4. **Deployment circuit breaker:** ECS has a deployment circuit breaker enabled with rollback. If a deploy fails health checks, it will automatically roll back to the previous task definition
+
+### Database Connection Errors
+
+- **`password authentication failed`**: The `DB_PASSWORD` in Secrets Manager doesn't match the `TF_VAR_DB_PASSWORD` used when Terraform created the RDS instance. They must be identical.
+- **`user "adventus_admin_staging" does not exist`**: Wrong `DB_USERNAME` in Secrets Manager. The correct value is `adventus_admin` (set by the Terraform RDS module, same for both environments).
+- **Connecting to database `postgres` instead of `adventus`**: Wrong `DB_DATABASE` in Secrets Manager. The correct value is `adventus`.
+- **`CHANGE_ME` errors**: Secrets Manager still has placeholder values. Update all keys with real values and force a new ECS deployment.
 
 ### Health Check Failing (`/up` endpoint)
 
