@@ -1,13 +1,22 @@
-name: Deploy Staging
+# Deploys the application to AWS ECS whenever code is pushed to staging or main.
+name: Deploy Staging to AWS Fargate
 
+# Triggers on pushes to staging (staging env) and main (production env).
 on:
   push:
     branches:
       - staging
 
+# Required for OIDC-based AWS authentication (no long-lived secrets needed).
 permissions:
   id-token: write
   contents: read
+
+# Ensures only one deploy per branch runs at a time; cancels in-progress runs
+# if a newer commit is pushed to the same branch.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -21,7 +30,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: "8.5"
           coverage: none
 
       - name: Install dependencies
@@ -41,7 +50,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: "8.5"
           coverage: none
 
       - name: Install dependencies
