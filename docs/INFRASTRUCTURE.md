@@ -283,24 +283,61 @@ All workflows are in `.github/workflows/`.
 
 ## Post-Deployment: Secrets Manager Values
 
-After Terraform creates the Secrets Manager secret, update it with real values. The secret is stored as JSON with the following keys:
+After Terraform creates the Secrets Manager secret (named `{project_name}/app`, e.g. `adventus-staging/app`), it contains placeholder values (`CHANGE_ME`). You must update it with real values before the application will work.
 
-| Key | How to get the value |
-|---|---|
-| `APP_KEY` | Generate with `php artisan key:generate --show` |
-| `DB_HOST` | From Terraform output `rds_host` |
-| `DB_PORT` | `5432` |
-| `DB_DATABASE` | `adventus` |
-| `DB_USERNAME` | `adventus_admin` |
-| `DB_PASSWORD` | The password you set as `TF_VAR_DB_PASSWORD` |
-| `PASSPORT_PRIVATE_KEY` | Generate with `php artisan passport:keys`, then copy `storage/oauth-private.key` |
-| `PASSPORT_PUBLIC_KEY` | From the same command, copy `storage/oauth-public.key` |
+### Generating Each Value
 
-**Update via AWS CLI:**
+**APP_KEY:**
+
+```bash
+php artisan key:generate --show
+# Output: base64:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**DB_HOST:**
+
+Find the RDS endpoint using one of these methods:
+
+1. **GitHub Actions logs (easiest):** Go to the **Actions** tab in your GitHub repo, open the latest `Terraform: Staging` (or Production) workflow run, click the **Terraform Apply** step, and scroll to the bottom. The outputs are printed at the end, including `rds_host`.
+
+2. **AWS CLI:**
+   ```bash
+   aws rds describe-db-instances \
+     --db-instance-identifier adventus-staging-postgres \
+     --region ap-southeast-1 \
+     --query 'DBInstances[0].Endpoint.Address' \
+     --output text
+   ```
+
+3. **AWS Console:** Go to **RDS > Databases > adventus-staging-postgres** and copy the **Endpoint** value under **Connectivity & security**.
+
+**DB_PORT / DB_DATABASE / DB_USERNAME:**
+
+These are fixed values set in the Terraform RDS module:
+- `DB_PORT`: `5432`
+- `DB_DATABASE`: `adventus`
+- `DB_USERNAME`: `adventus_admin`
+
+**DB_PASSWORD:**
+
+The same password you set as the `TF_VAR_DB_PASSWORD` GitHub secret.
+
+**PASSPORT_PRIVATE_KEY / PASSPORT_PUBLIC_KEY:**
+
+```bash
+php artisan passport:keys
+# This generates two files:
+#   storage/oauth-private.key
+#   storage/oauth-public.key
+# Copy the full contents of each file (including the BEGIN/END lines)
+```
+
+### Updating the Secret
 
 ```bash
 aws secretsmanager put-secret-value \
   --secret-id "adventus-staging/app" \
+  --region ap-southeast-1 \
   --secret-string '{
     "APP_KEY": "base64:...",
     "DB_HOST": "your-rds-endpoint.rds.amazonaws.com",
@@ -311,6 +348,20 @@ aws secretsmanager put-secret-value \
     "PASSPORT_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
     "PASSPORT_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
   }'
+```
+
+> **Note:** For production, use `--secret-id "adventus-production/app"`.
+
+### Restarting ECS After Updating Secrets
+
+ECS tasks read secrets at launch time. After updating Secrets Manager, force a new deployment to pick up the changes:
+
+```bash
+aws ecs update-service \
+  --cluster adventus-staging \
+  --service adventus-staging \
+  --force-new-deployment \
+  --region ap-southeast-1
 ```
 
 > **Important:** The ECS task definition references these secrets individually via `secretsmanager:{secret_arn}:KEY::`. Terraform sets up these references automatically - you only need to populate the values.
