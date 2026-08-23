@@ -106,7 +106,7 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
+  # Required for OIDC-based AWS authentication (no long-lived secrets needed).
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
