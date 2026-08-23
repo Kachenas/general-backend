@@ -32,8 +32,7 @@ resource "aws_ecr_lifecycle_policy" "this" {
         rulePriority = 2
         description  = "Keep only the 10 most recent tagged images"
         selection = {
-          tagStatus   = "tagged"
-          tagPrefixList = [""]
+          tagStatus   = "any"
           countType   = "imageCountMoreThan"
           countNumber = 10
         }
