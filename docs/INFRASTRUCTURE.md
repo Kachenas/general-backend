@@ -84,6 +84,7 @@ Create an IAM role with a trust policy that allows your GitHub repository to ass
 |---|---|
 | `AmazonCloudDirectoryFullAccess` | Cloud directory resources |
 | `AmazonEC2ContainerRegistryFullAccess` | Push/pull Docker images to ECR |
+| `AmazonRDSFullAccess` | Create and manage RDS instances, subnet groups, and backups |
 | `AmazonECS_FullAccess` | Manage ECS clusters, services, and task definitions |
 | `AmazonECSTaskExecutionRolePolicy` | Allow ECS tasks to pull images and write logs |
 | `AmazonS3FullAccess` | Terraform state storage in S3 |
@@ -155,7 +156,7 @@ Each environment (`staging` and `production`) needs the following variables and 
 
 | Secret | Description |
 |---|---|
-| `TF_VAR_DB_PASSWORD` | Master password for the RDS PostgreSQL database |
+| `TF_VAR_DB_PASSWORD` | Master password for the RDS PostgreSQL database. Must be at least 8 characters and cannot contain `/`, `"`, `@`, or spaces |
 
 ---
 
