@@ -1,4 +1,4 @@
-aws_region         = "us-east-1"
+aws_region         = "ap-southeast-1"
 task_cpu           = 256
 task_memory        = 512
 desired_count      = 1
