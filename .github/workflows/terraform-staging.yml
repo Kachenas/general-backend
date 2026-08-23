@@ -2,6 +2,15 @@ name: "Terraform: Staging"
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action to perform"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
   push:
     branches:
       - staging
@@ -62,7 +71,12 @@ jobs:
       - name: Terraform Plan
         id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -no-color -out=tfplan
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            terraform plan -destroy -no-color -out=tfplan
+          else
+            terraform plan -no-color -out=tfplan
+          fi
         continue-on-error: true
 
       - name: Comment PR with Plan
@@ -121,4 +135,9 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            terraform destroy -auto-approve
+          else
+            terraform apply -auto-approve
+          fi
