@@ -27,3 +27,13 @@ output "ecs_container_name" {
   description = "ECS container name"
   value       = module.ecs.container_name
 }
+
+output "rds_endpoint" {
+  description = "RDS endpoint (host:port)"
+  value       = module.rds.db_endpoint
+}
+
+output "rds_host" {
+  description = "RDS hostname"
+  value       = module.rds.db_host
+}

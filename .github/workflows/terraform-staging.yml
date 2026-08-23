@@ -71,6 +71,8 @@ jobs:
       - name: Terraform Plan
         id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
         run: |
           if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
             terraform plan -destroy -no-color -out=tfplan
@@ -135,6 +137,8 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
         run: |
           if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
             terraform destroy -auto-approve

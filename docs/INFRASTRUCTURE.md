@@ -27,7 +27,7 @@ Adventus runs on AWS using a containerized architecture deployed via Terraform a
 | | Staging | Production |
 |---|---|---|
 | Branch | `staging` | `main` |
-| Region | `ap-southeast-1` | `us-east-1` |
+| Region | `ap-southeast-1` | `ap-southeast-1` |
 | VPC CIDR | `10.0.0.0/16` | `10.1.0.0/16` |
 | Project name | `adventus-staging` | `adventus-production` |
 
@@ -320,7 +320,7 @@ aws secretsmanager put-secret-value \
 
 | Setting | Staging | Production |
 |---|---|---|
-| Region | `ap-southeast-1` | `us-east-1` |
+| Region | `ap-southeast-1` | `ap-southeast-1` |
 | VPC CIDR | `10.0.0.0/16` | `10.1.0.0/16` |
 | ECS CPU / Memory | 256 / 512 MB | 512 / 1024 MB |
 | ECS Desired Tasks | 1 | 2 |

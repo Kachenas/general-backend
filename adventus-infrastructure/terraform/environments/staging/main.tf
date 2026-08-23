@@ -75,6 +75,23 @@ module "alb" {
   tags              = local.tags
 }
 
+module "rds" {
+  source = "../../modules/rds"
+
+  project_name          = var.project_name
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  ecs_security_group_id = module.networking.ecs_security_group_id
+  instance_class        = var.db_instance_class
+  allocated_storage     = var.db_allocated_storage
+  db_name               = "adventus"
+  db_username           = "adventus_admin"
+  db_password           = var.db_password
+  skip_final_snapshot   = true
+  backup_retention_period = 0
+  tags                  = local.tags
+}
+
 module "ecs" {
   source = "../../modules/ecs"
 
