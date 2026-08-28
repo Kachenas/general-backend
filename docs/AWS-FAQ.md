@@ -56,3 +56,21 @@ git diff --name-only staging
 ```
 
 If the output only shows files outside `adventus-infrastructure/terraform/`, only the app deploy workflow will run.
+
+---
+
+## Q: ECS shows "CannotPullContainerError" and ECR has no images — do I stop the service first?
+
+**Answer:** No. This happens when Terraform creates the infrastructure (ECR repo, ECS service, etc.) but no Docker image has been pushed yet. The ECS service tries to start a container from an image that doesn't exist, so it fails with `CannotPullContainerError: pull image manifest has been retried 7 time(s): failed to resolve ref`.
+
+Just push your code to the `staging` branch or re-run the `deploy-staging.yml` workflow. It will build the image, push it to ECR, update the task definition, and deploy. ECS will automatically replace the failing tasks with healthy ones — no need to stop the service manually.
+
+**Run (re-trigger the deploy workflow):**
+
+```bash
+# Option 1: Push a commit to staging
+git push origin staging
+
+# Option 2: Re-run the workflow from GitHub Actions UI
+# Go to Actions > "Deploy Staging to AWS Fargate" > select the last run > "Re-run all jobs"
+```
