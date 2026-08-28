@@ -6,7 +6,20 @@
 
 **Answer:** AWS Secrets Manager doesn't delete secrets immediately. It schedules them for deletion with a 7–30 day recovery window. During that window the name is reserved and can't be reused, so `terraform apply` fails.
 
-**Run:**
+**Important:** The AWS Console hides secrets that are scheduled for deletion — it will show "No secrets" even though the secret still exists in a pending-deletion state. Always use the CLI to check.
+
+**Run (list all secrets including ones pending deletion):**
+
+```bash
+aws secretsmanager list-secrets --region <your-region> \
+  --include-planned-deletion \
+  --query "SecretList[].{Name:Name,DeletedDate:DeletedDate}" \
+  --output table
+```
+
+The `Name` column is the `--secret-id` value you need. `DeletedDate` will be set for secrets scheduled for deletion.
+
+**Run (force delete the secret):**
 
 ```bash
 aws secretsmanager delete-secret \
@@ -220,3 +233,83 @@ aws rds describe-db-instances --region ap-southeast-1 \
 ```
 
 Use the returned value as `DB_HOST` in your Secrets Manager secret.
+
+---
+
+## Q: "password authentication failed" and "no pg_hba.conf entry... no encryption" — what's wrong?
+
+**Answer:** This error has two parts:
+
+**1. Password mismatch** — The `DB_PASSWORD` in Secrets Manager must match the password the RDS instance was originally created with. Updating the password in GitHub Secrets (`TF_VAR_DB_PASSWORD`) only affects future `terraform apply` runs — it does **not** update Secrets Manager or the running ECS containers. You must update the password directly in Secrets Manager.
+
+**2. SSL not enabled** — AWS RDS rejects unencrypted PostgreSQL connections. Laravel's `sslmode` defaults to `prefer`, which can fall back to no encryption. You need `DB_SSLMODE=require` set as an environment variable in the ECS task definition (`modules/ecs/main.tf`):
+
+```hcl
+environment = [
+  { name = "DB_CONNECTION", value = "pgsql" },
+  { name = "DB_SSLMODE", value = "require" },
+  # ...other env vars...
+]
+```
+
+This is a Terraform change, so it requires a push to `staging` with the modified file under `adventus-infrastructure/terraform/**` to trigger the Terraform workflow.
+
+**Also check:** The error may show `Database: postgres` instead of your actual database name. Make sure `DB_DATABASE` in Secrets Manager is set to `adventus`, not `CHANGE_ME` — otherwise Laravel connects to the default `postgres` database.
+
+---
+
+## Q: I updated the password in GitHub Secrets — do I need to rerun Terraform?
+
+**Answer:** It depends on what you're trying to do:
+
+- **If Secrets Manager already has the correct password** (matching what RDS was created with), you don't need to rerun Terraform. The app reads credentials from Secrets Manager, not from GitHub.
+- **If you want to change the RDS password itself**, then yes — update `TF_VAR_DB_PASSWORD` in GitHub Secrets and rerun `terraform apply`. Terraform will modify the RDS instance password. Then also update `DB_PASSWORD` in Secrets Manager to match, and force a new ECS deployment.
+
+The key distinction:
+
+| Store | What it controls |
+|-------|-----------------|
+| **GitHub Secrets** (`TF_VAR_DB_PASSWORD`) | The password Terraform sets on the RDS instance |
+| **Secrets Manager** (`DB_PASSWORD`) | The password the running app uses to connect |
+| **RDS instance** | The actual password PostgreSQL validates against |
+
+All three must match. Updating one does not automatically update the others.
+
+---
+
+## Q: Terraform is using stale state — can I destroy and recreate everything?
+
+**Answer:** Yes. For staging this is safe since `skip_final_snapshot = true` and there's no production data at risk.
+
+**Run (via GitHub Actions UI — recommended):**
+
+1. Go to Actions > "Terraform: Staging" > "Run workflow" > choose **"destroy"**
+2. Wait for it to complete
+3. Run the workflow again with **"apply"**
+
+**Run (via CLI, if you have Terraform and AWS credentials locally):**
+
+```bash
+cd adventus-infrastructure/terraform/environments/staging
+
+terraform init \
+  -backend-config="bucket=<your-tf-state-bucket>" \
+  -backend-config="key=adventus/staging/terraform.tfstate" \
+  -backend-config="region=ap-southeast-1"
+
+terraform destroy -auto-approve
+terraform apply -auto-approve
+```
+
+**After recreating, you must:**
+
+1. Populate Secrets Manager with real values again — RDS will have a **new endpoint**, so `DB_HOST` will change
+2. Push an image to ECR — push to `staging` or re-run `deploy-staging.yml`, since the ECR repo will be empty
+
+> **Warning:** Destroying deletes the RDS instance and all its data. Staging has `skip_final_snapshot = true`, so there is no automatic backup. If you have data you need, take a manual snapshot first:
+> ```bash
+> aws rds create-db-snapshot \
+>   --db-instance-identifier adventus-staging-postgres \
+>   --db-snapshot-identifier adventus-staging-manual-backup \
+>   --region ap-southeast-1
+> ```
