@@ -313,3 +313,70 @@ terraform apply -auto-approve
 >   --db-snapshot-identifier adventus-staging-manual-backup \
 >   --region ap-southeast-1
 > ```
+
+---
+
+## Q: ALB target is healthy — how do I find the URL to test my API?
+
+**Answer:** The ALB has a public DNS name assigned by AWS. It looks something like `adventus-staging-alb-123456789.ap-southeast-1.elb.amazonaws.com`.
+
+**Run (get the ALB DNS name):**
+
+```bash
+aws elbv2 describe-load-balancers --region ap-southeast-1 \
+  --names adventus-staging-alb \
+  --query "LoadBalancers[].DNSName" \
+  --output text
+```
+
+**Run (test the endpoint):**
+
+```bash
+# Basic health check (returns HTTP status and headers)
+curl -I http://<alb-dns-name>
+
+# Test an API route
+curl http://<alb-dns-name>/api/health
+```
+
+You can also paste the ALB DNS name directly into your browser.
+
+> **Common mistake:** Make sure to include `//` after `http:`. Using `http:example.com` instead of `http://example.com` will give a curl error: `URL rejected: Port number was not a decimal number between 0 and 65535`.
+
+---
+
+## Q: Where is the ALB health check configured and what endpoint does it use?
+
+**Answer:** The health check is already set up in two places:
+
+**1. Laravel app** — `bootstrap/app.php` registers the built-in `/up` endpoint:
+
+```php
+health: '/up',
+```
+
+This returns HTTP 200 when the application is running. No controller or custom route is needed.
+
+**2. ALB target group** — `modules/alb/main.tf` points the health check at that endpoint:
+
+```hcl
+health_check {
+  enabled             = true
+  path                = "/up"
+  port                = "traffic-port"
+  protocol            = "HTTP"
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+  timeout             = 5
+  interval            = 30
+  matcher             = "200"
+}
+```
+
+The ALB checks `/up` every 30 seconds. If it gets HTTP 200 twice in a row, the target is marked healthy. If it fails 3 times, it's marked unhealthy.
+
+**Run (test the health check manually):**
+
+```bash
+curl http://<alb-dns-name>/up
+```
