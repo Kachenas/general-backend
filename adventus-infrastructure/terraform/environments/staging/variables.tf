@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-1"
+  default     = "ap-southeast-1"
 }
 
 variable "project_name" {
@@ -46,4 +46,28 @@ variable "container_insights" {
   description = "Enable Container Insights on the ECS cluster"
   type        = bool
   default     = false
+}
+
+variable "db_password" {
+  description = "Master password for the RDS database"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB"
+  type        = number
+  default     = 20
+}
+
+variable "developer_user_names" {
+  description = "Existing IAM user names to grant SSM bastion access for DB tunneling (see modules/iam-developers)"
+  type        = list(string)
+  default     = []
 }

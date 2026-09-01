@@ -56,6 +56,7 @@ resource "aws_ecs_task_definition" "this" {
         { name = "APP_URL", value = "http://${var.alb_dns_name}" },
         { name = "LOG_CHANNEL", value = "stderr" },
         { name = "DB_CONNECTION", value = "pgsql" },
+        { name = "DB_SSLMODE", value = "require" },
         { name = "RUN_MIGRATIONS", value = var.run_migrations },
       ]
 
