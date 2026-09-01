@@ -65,3 +65,9 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
 }
+
+variable "developer_user_names" {
+  description = "Existing IAM user names to grant SSM bastion access for DB tunneling (see modules/iam-developers)"
+  type        = list(string)
+  default     = []
+}

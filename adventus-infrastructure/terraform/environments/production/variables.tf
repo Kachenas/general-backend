@@ -77,3 +77,9 @@ variable "db_backup_retention_period" {
   type        = number
   default     = 0
 }
+
+variable "developer_user_names" {
+  description = "Existing IAM user names to grant SSM bastion access for DB tunneling (see modules/iam-developers)"
+  type        = list(string)
+  default     = []
+}

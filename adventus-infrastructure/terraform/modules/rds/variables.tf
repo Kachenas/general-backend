@@ -3,18 +3,13 @@ variable "project_name" {
   type        = string
 }
 
-variable "vpc_id" {
-  description = "VPC ID where RDS will be placed"
-  type        = string
-}
-
 variable "private_subnet_ids" {
   description = "List of private subnet IDs for the DB subnet group"
   type        = list(string)
 }
 
-variable "ecs_security_group_id" {
-  description = "Security group ID of ECS tasks (allowed to access RDS)"
+variable "security_group_id" {
+  description = "Security group ID to attach to the RDS instance (owned by modules/security-groups)"
   type        = string
 }
 

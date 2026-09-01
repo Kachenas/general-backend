@@ -14,6 +14,9 @@ Adventus runs on AWS using a containerized architecture deployed via Terraform a
                        \          /
                       [ RDS PostgreSQL ]
                        (private subnet)
+                            |
+                      [ Bastion (SSM) ]  <- developers, via aws ssm start-session
+                       (private subnet)     (no public IP, no SSH key, no inbound rules)
 
   Supporting services:
   - ECR (container registry)
@@ -21,6 +24,8 @@ Adventus runs on AWS using a containerized architecture deployed via Terraform a
   - CloudWatch (logs)
   - S3 (Terraform state)
 ```
+
+RDS is never reachable from the internet. Only the ECS tasks and the bastion may open a connection to it — see [Database Access](./database-access.md) for how to actually connect a GUI client (TablePlus, DBeaver, etc.) to view data.
 
 **Two environments:**
 
@@ -187,7 +192,7 @@ Trigger the Terraform workflow to create all infrastructure:
 - **Staging:** Push Terraform changes to the `staging` branch, or use the `workflow_dispatch` trigger in GitHub Actions
 - **Production:** Push Terraform changes to the `main` branch, or use the `workflow_dispatch` trigger
 
-Terraform creates: VPC, subnets, NAT gateway, ALB, security groups, ECR repository, Secrets Manager secret, IAM roles, RDS instance, ECS cluster, task definition, and ECS service.
+Terraform creates: VPC, subnets, NAT gateway, ALB, security groups, ECR repository, Secrets Manager secret, IAM roles, RDS instance, bastion EC2 instance, developer IAM group/policy, ECS cluster, task definition, and ECS service.
 
 ### Step 4: Populate Remaining GitHub Variables
 
@@ -231,13 +236,26 @@ All Terraform modules are located in `adventus-infrastructure/terraform/modules/
 
 | Module | Resources Created |
 |---|---|
-| **networking** | VPC, internet gateway, 2 public subnets, 2 private subnets, NAT gateway (single), route tables, ALB security group (HTTP inbound), ECS security group (HTTP from ALB only) |
+| **networking** | VPC, internet gateway, 2 public subnets, 2 private subnets, NAT gateway (single), route tables. Owns no security groups — see **security-groups** below |
+| **security-groups** | Single source of truth for every security group and allow-rule in the stack: ALB (HTTP inbound from internet), ECS (from ALB only), RDS (from ECS + bastion only), bastion (no inbound rules at all) |
 | **ecr** | ECR repository with image scanning enabled. Lifecycle policy: untagged images expire after 7 days, keep last 10 tagged images |
 | **secrets** | Secrets Manager secret with placeholder JSON containing: `APP_KEY`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `PASSPORT_PRIVATE_KEY`, `PASSPORT_PUBLIC_KEY`. Lifecycle ignores manual secret updates |
 | **iam** | ECS task execution role (ECR pull + Secrets Manager read), ECS task role (application runtime, minimal permissions) |
 | **alb** | Public-facing Application Load Balancer, target group (IP-based for Fargate, health check on `/up`), HTTP listener on port 80 |
-| **rds** | PostgreSQL 16 instance in private subnets, encrypted storage (gp3), security group allowing port 5432 from ECS only |
+| **rds** | PostgreSQL 16 instance in private subnets, encrypted storage (gp3). Security group comes from the **security-groups** module, not created here |
+| **bastion** | Keyless EC2 instance (Amazon Linux 2023) in a private subnet, reachable only via SSM Session Manager. Used exclusively to port-forward a local connection to RDS for manual inspection — see [Database Access](./database-access.md) |
+| **iam-developers** | IAM policy scoped to `ssm:StartSession` on the bastion instance only, attached to a `{project_name}-developers` IAM group. Onboarding a developer = adding their IAM username to `developer_user_names` in tfvars |
 | **ecs** | ECS cluster, Fargate task definition (Nginx + PHP-FPM container), ECS service with deployment circuit breaker and rollback, CloudWatch log group |
+
+---
+
+## Why There's a `moved.tf` in Each Environment
+
+Security groups originally lived inside the `networking` and `rds` modules. They were later extracted into a dedicated `security-groups` module so every allow-rule between components (ALB → ECS → RDS, bastion → RDS) is defined in one file instead of scattered across three.
+
+Since the ALB/ECS/RDS security groups were already live in AWS at the time of that refactor, simply moving the resource blocks into the new module would have made Terraform destroy and recreate them (a security group's Terraform address includes its module path). `environments/staging/moved.tf` and `environments/production/moved.tf` contain `moved` blocks that tell Terraform "this is the same resource, just relocated" — so `terraform apply` updates state in place with no destroy/recreate.
+
+**If you ever see an unexpected destroy/recreate of a security group in a `terraform plan`**, check that the `moved` block's `from` address still matches where the resource used to live — `moved` blocks are safe to leave in place indefinitely (they no-op once the move has happened), so there's no cleanup step required after the first successful apply.
 
 ---
 
@@ -245,23 +263,33 @@ All Terraform modules are located in `adventus-infrastructure/terraform/modules/
 
 All workflows are in `.github/workflows/`.
 
+Plan (read-only) and apply/destroy are split into separate workflow files so opening a PR only ever runs a plan — never an apply or destroy — regardless of who triggers it.
+
+### `terraform-plan-staging.yml` / `terraform-plan-production.yml` - Terraform: Plan
+
+| | |
+|---|---|
+| **Trigger** | PR to `staging` / `main` (paths: `adventus-infrastructure/terraform/**`), `workflow_dispatch` |
+| **What it does** | `terraform init`, `validate`, `plan` only. Comments the plan output on PRs. Never applies or destroys anything |
+| **Concurrency** | `terraform-plan-{env}-${{ github.ref }}`, cancels in-progress runs (superseded plans are irrelevant) |
+
 ### `terraform-staging.yml` - Terraform: Staging
 
 | | |
 |---|---|
-| **Trigger** | Push to `staging` (paths: `adventus-infrastructure/terraform/**`), PR to `staging` (same paths), `workflow_dispatch` (apply or destroy) |
-| **What it does** | Runs `terraform plan` on every trigger. On push to `staging` or `workflow_dispatch`, also runs `terraform apply` (or `terraform destroy` if selected). Comments the plan output on PRs |
+| **Trigger** | Push to `staging` (paths: `adventus-infrastructure/terraform/**`), `workflow_dispatch` (`action: apply` or `destroy`) |
+| **What it does** | On push, runs `terraform apply`. On `workflow_dispatch`, runs `apply` or `destroy` per the `action` input |
 | **Concurrency** | `terraform-staging` group, no cancel-in-progress (state locking via concurrency group) |
-| **Destroy support** | Yes, via `workflow_dispatch` with `action: destroy` |
+| **Destroy support** | Yes, via `workflow_dispatch` with `action: destroy` — no additional confirmation required |
 
 ### `terraform-production.yml` - Terraform: Production
 
 | | |
 |---|---|
-| **Trigger** | Push to `main` (paths: `adventus-infrastructure/terraform/**`), PR to `main` (same paths), `workflow_dispatch` |
-| **What it does** | Runs `terraform plan` on every trigger. On push to `main` or `workflow_dispatch`, also runs `terraform apply`. Comments the plan output on PRs |
+| **Trigger** | Push to `main` (paths: `adventus-infrastructure/terraform/**`), `workflow_dispatch` (`action: apply` or `destroy`) |
+| **What it does** | On push, runs `terraform apply`. On `workflow_dispatch`, runs `apply` or `destroy` per the `action` input, gated by a `guard` job |
 | **Concurrency** | `terraform-production` group, no cancel-in-progress |
-| **Destroy support** | No (apply only) |
+| **Destroy support** | Yes, via `workflow_dispatch` with `action: destroy` — but the `guard` job fails the run unless the `confirm_destroy` input is typed exactly as `destroy-production`. This is the only environment with this extra gate, since it runs a real RDS instance with live data |
 
 ### `deploy-staging.yml` - Deploy Staging to AWS Fargate
 
@@ -389,7 +417,7 @@ aws ecs update-service \
 | Migrations | Auto (`RUN_MIGRATIONS=true`) | Manual (`RUN_MIGRATIONS=false`) |
 | CloudWatch Log Retention | 14 days | 90 days |
 | Container Insights | Disabled | Enabled |
-| Terraform Destroy | Supported via workflow_dispatch | Not supported |
+| Terraform Destroy | Supported via `workflow_dispatch` | Supported via `workflow_dispatch`, requires typing `destroy-production` in `confirm_destroy` |
 
 ---
 

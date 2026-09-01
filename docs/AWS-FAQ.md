@@ -51,7 +51,8 @@ resource "aws_secretsmanager_secret" "this" {
 **Answer:** No. The Terraform and application deploy workflows are separate and trigger independently.
 
 - **Application code changes** — Pushing to `staging` triggers `deploy-staging.yml`, which lints, tests, builds a Docker image, pushes to ECR, and deploys to ECS. Terraform is not touched.
-- **Infrastructure changes** — Pushing to `staging` with changes under `adventus-infrastructure/terraform/**` triggers `terraform-staging.yml`, which runs `terraform plan` then `terraform apply`. This only fires when Terraform files are modified.
+- **Infrastructure changes, via a PR** — Opening a PR to `staging`/`main` with changes under `adventus-infrastructure/terraform/**` triggers `terraform-plan-staging.yml` / `terraform-plan-production.yml`, which only runs `terraform plan` and comments the result on the PR. Nothing is applied.
+- **Infrastructure changes, via a push** — Pushing to `staging`/`main` with changes under `adventus-infrastructure/terraform/**` triggers `terraform-staging.yml` / `terraform-production.yml`, which runs `terraform apply` directly (no plan-then-apply gate on push — review happens at the PR stage instead).
 - **Both at once** — If a push changes both app code and Terraform files, both workflows run independently.
 
 **Run (manual Terraform apply):**
@@ -380,3 +381,54 @@ The ALB checks `/up` every 30 seconds. If it gets HTTP 200 twice in a row, the t
 ```bash
 curl http://<alb-dns-name>/up
 ```
+
+---
+
+## Q: How do I destroy infrastructure now? Is production supported?
+
+**Answer:** Yes, for both environments — but they behave differently on purpose.
+
+Plan and apply/destroy are now separate workflows. Opening a PR only ever triggers `terraform-plan-staging.yml` / `terraform-plan-production.yml` (read-only, comments the plan on the PR). Actually changing infrastructure requires `terraform-staging.yml` / `terraform-production.yml` via `workflow_dispatch`.
+
+- **Staging:** Go to Actions > "Terraform: Staging" > "Run workflow" > `action: destroy`. No further confirmation needed.
+- **Production:** Go to Actions > "Terraform: Production" > "Run workflow" > `action: destroy`, and you must also type `destroy-production` exactly into the `confirm_destroy` field. A `guard` job fails the run before Terraform even runs if that field doesn't match — this is the only extra safeguard on production, since it runs a real RDS instance with live data.
+
+**Run (check what a destroy would remove, without doing it):**
+
+```bash
+cd adventus-infrastructure/terraform/environments/staging  # or production
+terraform init \
+  -backend-config="bucket=<your-tf-state-bucket>" \
+  -backend-config="key=adventus/staging/terraform.tfstate" \
+  -backend-config="region=ap-southeast-1"
+terraform plan -destroy
+```
+
+> **Warning:** Destroying either environment deletes its RDS instance. Staging has `skip_final_snapshot = true` (no automatic backup); production keeps a final snapshot by default (`db_skip_final_snapshot = false`). Take a manual snapshot first if you need one regardless — see the "Terraform is using stale state" question above for the command.
+
+---
+
+## Q: I have real values for RDS but MySQL Workbench (or my GUI client) fails to connect — why?
+
+**Answer:** Two separate problems, and MySQL Workbench specifically can't be fixed by adjusting values — the RDS instance runs **PostgreSQL**, and MySQL Workbench only speaks the MySQL wire protocol. Use a Postgres-capable client instead: TablePlus, DBeaver, Postico, or pgAdmin 4.
+
+Even with the right client, connecting directly from your laptop will fail: RDS has `publicly_accessible = false` and its security group only allows inbound 5432 from the ECS tasks and a dedicated bastion instance — your laptop's IP has no path to it at all.
+
+See **[database-access.md](./database-access.md)** for the full setup: tunneling through the bastion with `aws ssm start-session`, then pointing your GUI client at `localhost:5432`.
+
+---
+
+## Q: How do I get access to view data in RDS as a developer?
+
+**Answer:** You need to be added to the project's developer IAM group, which grants SSM access to the bastion (and nothing else — no direct RDS credentials, no other EC2 access).
+
+**Run (whoever manages Terraform adds you):**
+
+```hcl
+# environments/staging/terraform.tfvars (or production)
+developer_user_names = ["your-iam-username"]
+```
+
+Then `terraform apply`. After that, follow **[database-access.md](./database-access.md)** to install the Session Manager plugin, open the tunnel, and connect a GUI client.
+
+> **Note:** If your org uses AWS Identity Center instead of individual IAM users, skip `developer_user_names` and attach the `developer_ssm_policy_arn` Terraform output to your permission set instead.

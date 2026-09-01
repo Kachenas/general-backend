@@ -11,35 +11,8 @@ resource "aws_db_subnet_group" "this" {
   })
 }
 
-# =============================================================================
-# RDS Security Group
-# =============================================================================
-
-resource "aws_security_group" "rds" {
-  name        = "${var.project_name}-rds-sg"
-  description = "Allow inbound PostgreSQL from ECS tasks"
-  vpc_id      = var.vpc_id
-
-  tags = merge(var.tags, {
-    Name = "${var.project_name}-rds-sg"
-  })
-}
-
-resource "aws_vpc_security_group_ingress_rule" "rds_from_ecs" {
-  security_group_id            = aws_security_group.rds.id
-  description                  = "PostgreSQL from ECS tasks"
-  from_port                    = 5432
-  to_port                      = 5432
-  ip_protocol                  = "tcp"
-  referenced_security_group_id = var.ecs_security_group_id
-}
-
-resource "aws_vpc_security_group_egress_rule" "rds_all" {
-  security_group_id = aws_security_group.rds.id
-  description       = "Allow all outbound"
-  ip_protocol       = "-1"
-  cidr_ipv4         = "0.0.0.0/0"
-}
+# The security group (who may reach this instance) is owned by
+# modules/security-groups and passed in via var.security_group_id.
 
 # =============================================================================
 # RDS PostgreSQL Instance
@@ -61,7 +34,7 @@ resource "aws_db_instance" "this" {
   password = var.db_password
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  vpc_security_group_ids = [var.security_group_id]
   publicly_accessible    = false
 
   skip_final_snapshot     = var.skip_final_snapshot

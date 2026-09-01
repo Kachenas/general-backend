@@ -49,6 +49,14 @@ module "ecr" {
   tags            = local.tags
 }
 
+module "security_groups" {
+  source = "../../modules/security-groups"
+
+  project_name = var.project_name
+  vpc_id       = module.networking.vpc_id
+  tags         = local.tags
+}
+
 module "secrets" {
   source = "../../modules/secrets"
 
@@ -71,7 +79,7 @@ module "alb" {
   project_name      = var.project_name
   vpc_id            = module.networking.vpc_id
   public_subnet_ids = module.networking.public_subnet_ids
-  security_group_id = module.networking.alb_security_group_id
+  security_group_id = module.security_groups.alb_security_group_id
   tags              = local.tags
 }
 
@@ -79,9 +87,8 @@ module "rds" {
   source = "../../modules/rds"
 
   project_name            = var.project_name
-  vpc_id                  = module.networking.vpc_id
   private_subnet_ids      = module.networking.private_subnet_ids
-  ecs_security_group_id   = module.networking.ecs_security_group_id
+  security_group_id       = module.security_groups.rds_security_group_id
   instance_class          = var.db_instance_class
   allocated_storage       = var.db_allocated_storage
   db_name                 = "adventus"
@@ -90,6 +97,24 @@ module "rds" {
   skip_final_snapshot     = var.db_skip_final_snapshot
   backup_retention_period = var.db_backup_retention_period
   tags                    = local.tags
+}
+
+module "bastion" {
+  source = "../../modules/bastion"
+
+  project_name      = var.project_name
+  subnet_id         = module.networking.private_subnet_ids[0]
+  security_group_id = module.security_groups.bastion_security_group_id
+  tags              = local.tags
+}
+
+module "iam_developers" {
+  source = "../../modules/iam-developers"
+
+  project_name         = var.project_name
+  bastion_instance_arn = module.bastion.instance_arn
+  developer_user_names = var.developer_user_names
+  tags                 = local.tags
 }
 
 module "ecs" {
@@ -108,7 +133,7 @@ module "ecs" {
   app_env               = "production"
   run_migrations        = var.run_migrations
   private_subnet_ids    = module.networking.private_subnet_ids
-  ecs_security_group_id = module.networking.ecs_security_group_id
+  ecs_security_group_id = module.security_groups.ecs_security_group_id
   target_group_arn      = module.alb.target_group_arn
   log_retention_days    = var.log_retention_days
   container_insights    = var.container_insights
